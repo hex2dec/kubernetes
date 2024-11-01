@@ -24,9 +24,11 @@ import (
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
+	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
+	"k8s.io/kubernetes/pkg/features"
 	kubetypes "k8s.io/kubernetes/pkg/kubelet/types"
 )
 
@@ -59,7 +61,12 @@ func newSourceApiserverFromLW(lw cache.ListerWatcher, updates chan<- interface{}
 	send := func(objs []interface{}) {
 		var pods []*v1.Pod
 		for _, o := range objs {
-			pods = append(pods, o.(*v1.Pod))
+			p := o.(*v1.Pod)
+			if utilfeature.DefaultFeatureGate.Enabled(features.KubeletPodOverrideHostNetwork) &&
+				p.GetAnnotations()["kubelet.kubernetes.io/host-network-for-edge-node"] == "true" {
+				p.Spec.HostNetwork = true
+			}
+			pods = append(pods, p)
 		}
 		updates <- kubetypes.PodUpdate{Pods: pods, Op: kubetypes.SET, Source: kubetypes.ApiserverSource}
 	}
